@@ -1,0 +1,753 @@
+---
+title: "GroupCoursework1_RetailAnalytics"
+author: "Team 3"
+date: "2/27/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE,echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(ggplot2)
+library(reshape)
+require(smooth)
+library(forecast)
+library(stargazer)
+library(knitr)
+```
+
+#Part 1- Data preparation
+
+##Price computation and plotting 
+```{r,echo=FALSE}
+crackers2 <- read_excel("Crackers.xlsx", sheet = "Product 2")
+crackers3 <- read_excel("Crackers.xlsx", sheet = "Product 3")
+crackers4 <- read_excel("Crackers.xlsx", sheet = "Product 4")
+crackers5 <- read_excel("Crackers.xlsx", sheet = "Product 5")
+```
+
+```{r,echo=FALSE}
+crackers2$price_euro <- crackers2$Value_Euros /  crackers2$Volume
+crackers3$price_euro <- crackers3$Value_Euros /  crackers3$Volume
+crackers4$price_euro <- crackers4$Value_Euros /  crackers4$Volume
+crackers5$price_euro <- crackers5$Value_Euros /  crackers5$Volume
+```
+
+```{r,echo=FALSE}
+cracker_prices <- data.frame(week = 1:105, crackers2 = crackers2$price_euro, 
+                             crackers3 = crackers3$price_euro, 
+                             crackers4 = crackers4$price_euro, 
+                             crackers5 = crackers5$price_euro)
+cracker_prices <- melt(cracker_prices,id="week")
+
+ggplot(cracker_prices)+
+  geom_line(aes(x=week,y=value,color=variable,group=variable))+
+  labs(title="Prices of crackers (euros)",colour="Product",y="Price")
+
+
+```
+
+
+```{r, echo=FALSE}
+colnames(crackers2)[-1]<-paste ("crackers2",colnames(crackers2)[-1], sep = ".")
+colnames(crackers3)[-1]<-paste ("crackers3",colnames(crackers3)[-1], sep = ".")
+colnames(crackers4)[-1]<-paste ("crackers4",colnames(crackers4)[-1], sep = ".")
+colnames(crackers5)[-1]<-paste ("crackers5",colnames(crackers5)[-1], sep = ".")
+
+crackers_final <- cbind(crackers2[,c("Week","crackers2.Volume","crackers2.Average_Number_SKUs","crackers2.price_euro")],crackers3[,c("crackers3.Volume","crackers3.Average_Number_SKUs","crackers3.price_euro","crackers3.GRP"  )],crackers4[,c("crackers4.Volume","crackers4.Average_Number_SKUs","crackers4.GRP","crackers4.price_euro")],crackers5[,c("crackers5.Volume","crackers5.Average_Number_SKUs","crackers5.price_euro")],deparse.level=1)
+crackers_final$Week <- 1:nrow(crackers_final)
+```
+
+
+
+#Part 2- Price elasticities 
+
+##Own elasticities
+
+##Simple models
+
+###Crackers2
+```{r,echo=FALSE,message=FALSE,results='hide'}
+#Linear Model
+null_crackers2=lm(crackers2.Volume~1,data=crackers_final)
+full_crackers2=lm(crackers2.Volume~. -(crackers3.Volume+crackers4.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers2,data=crackers_final,direction="backward")
+step(null_crackers2,scope=list(lower=null_crackers2,upper=full_crackers2),direction="forward")
+step(null_crackers2,scope=list(upper=full_crackers2),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following linear model:
+#crackers2.Volume ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+#    crackers3.GRP + crackers4.price_euro + crackers5.price_euro
+
+crackers2_lm1 <- lm(crackers2.Volume ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+    crackers3.GRP + crackers4.price_euro + crackers5.price_euro, data=crackers_final)
+summary(crackers2_lm1)
+prediction_lm1<-predict(crackers2_lm1, crackers_final)
+Insample_fit_lm1<- sqrt(sum((crackers_final$crackers2.Volume-prediction_lm1)^2))/105
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers3.GRP)
+crackers2_lm2 <- lm(crackers2.Volume ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+     crackers4.price_euro + crackers5.price_euro, data=crackers_final)
+summary(crackers2_lm2)
+prediction_lm2<-predict(crackers2_lm2, crackers_final)
+Insample_fit_lm2<- sqrt(sum((crackers_final$crackers2.Volume-prediction_lm2)^2))/105
+
+#######################
+
+
+#Semi-Log Model
+null_crackers2=lm(log(crackers2.Volume)~1,data=crackers_final)
+full_crackers2=lm(log(crackers2.Volume)~. -(crackers3.Volume+crackers4.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers2,data=crackers_final,direction="backward")
+step(null_crackers2,scope=list(lower=null_crackers2,upper=full_crackers2),direction="forward")
+step(null_crackers2,scope=list(upper=full_crackers2),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+#    crackers3.GRP + crackers4.price_euro + crackers5.price_euro
+
+crackers2_sl1 <- lm(log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+    crackers3.GRP + crackers4.price_euro + crackers5.price_euro, data=crackers_final)
+summary(crackers2_sl1)
+prediction2_sl1<-predict(crackers2_sl1, crackers_final)
+Insample_fit_sl1<- sqrt(sum((crackers_final$crackers2.Volume-exp(prediction2_sl1)*exp(var(crackers2_sl1$residuals)/2))^2))/105
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers3.GRP)
+crackers2_sl2 <- lm(log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+    crackers4.price_euro + crackers5.price_euro, data=crackers_final)
+summary(crackers2_sl2)
+prediction2_sl2<-predict(crackers2_sl2, crackers_final)
+accuracy(crackers_final$crackers2.Volume,exp(prediction2_sl2)*exp(var(crackers2_sl2$residuals)/2))
+Insample_fit_sl2<- sqrt(sum((crackers_final$crackers2.Volume-exp(prediction2_sl2)*exp(var(crackers2_sl2$residuals)/2))^2))/105
+
+
+
+####################
+
+#Log-Log Model
+null_crackers2=lm(log(crackers2.Volume)~1,data=crackers_final)
+full_crackers2=lm(log(crackers2.Volume)~. -(crackers3.Volume+crackers4.Volume+crackers5.Volume)+(log(crackers2.price_euro)+log(crackers3.price_euro)+log(crackers4.price_euro)+log(crackers5.price_euro)),data=crackers_final)
+step(full_crackers2,data=crackers_final,direction="backward")
+step(null_crackers2,scope=list(lower=null_crackers2,upper=full_crackers2),direction="forward")
+step(null_crackers2,scope=list(upper=full_crackers2),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.GRP + 
+#     log(crackers3.price_euro) + log(crackers4.price_euro) + 
+#    log(crackers5.price_euro)
+
+crackers2_ll1 <- lm(log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.GRP + 
+     log(crackers3.price_euro) + log(crackers4.price_euro) + 
+    log(crackers5.price_euro), data=crackers_final)
+summary(crackers2_ll1)
+prediction2_ll1<-predict(crackers2_ll1)
+Insample_fit_ll1<- sqrt(sum((crackers_final$crackers2.Volume-exp(prediction2_ll1)*exp(var(crackers2_ll1$residuals)/2))^2))/105
+
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers3.GRP)
+crackers2_ll2 <- lm(log(crackers2.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers2.price_euro + crackers3.Average_Number_SKUs  + 
+     log(crackers3.price_euro) + log(crackers4.price_euro) + 
+    log(crackers5.price_euro), data=crackers_final)
+summary(crackers2_ll2)
+prediction2_ll2<-predict(crackers2_ll2)
+Insample_fit_ll2<- sqrt(sum((crackers_final$crackers2.Volume-exp(prediction2_ll2)*exp(var(crackers2_ll2$residuals)/2))^2))/105
+```
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+#Display all regression results
+#Split them in two parts to be visible
+stargazer(crackers2_lm1, crackers2_lm2,crackers2_sl1, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 2) regression models")
+
+
+stargazer(crackers2_sl2,crackers2_ll1,crackers2_ll2, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 2) regression models")
+
+
+```
+
+```{r, echo=FALSE}
+#Illustrate in-sample performance: sqrt(SSE)/N
+Performance2 <-  data.frame(Linear_Model1=Insample_fit_lm1,Linear_Model2=Insample_fit_lm2,Semi_Log_Model1=Insample_fit_sl1,Semi_Log_Model2=Insample_fit_sl2,Log_Log_Model1=Insample_fit_ll1,Log_Log_Model2=Insample_fit_ll2)
+kable(Performance2 ,caption = "In-Sample Performance (Cracker 2): sqrt(SSE)/N"  )
+
+
+#Final model:
+#crackers2.Volume ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers2.price_euro + crackers3.Average_Number_SKUs + crackers3.price_euro + 
+#    crackers3.GRP + crackers4.price_euro + crackers5.price_euro
+
+```
+
+
+###Crackers3
+```{r,echo=FALSE,message=FALSE,results='hide'}
+#Linear Model
+null_crackers3=lm(crackers3.Volume~1,data=crackers_final)
+full_crackers3=lm(crackers3.Volume~. -(crackers2.Volume+crackers4.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers3,data=crackers_final,direction="backward")
+step(null_crackers3,scope=list(lower=null_crackers3,upper=full_crackers3),direction="forward")
+step(null_crackers3,scope=list(upper=full_crackers3),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following linear model:
+#crackers3.Volume ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+#    crackers4.GRP + crackers4.price_euro + crackers5.price_euro
+
+crackers3_lm1 <- lm(crackers3.Volume ~ Week + crackers2.Average_Number_SKUs + 
+    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+    crackers4.GRP + crackers4.price_euro + crackers5.price_euro, data=crackers_final)
+summary(crackers3_lm1)
+prediction_lm1<-predict(crackers3_lm1, crackers_final)
+Insample_fit_lm1<- sqrt(sum((crackers_final$crackers3.Volume-prediction_lm1)^2))/105
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers5.price_euro )
+crackers3_lm2 <- lm(crackers3.Volume ~ Week + crackers2.Average_Number_SKUs + 
+    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+    crackers4.GRP + crackers4.price_euro, data=crackers_final)
+summary(crackers3_lm2)
+prediction_lm2<-predict(crackers3_lm2, crackers_final)
+Insample_fit_lm2<- sqrt(sum((crackers_final$crackers3.Volume-prediction_lm2)^2))/105
+
+
+#Semi-Log Model
+null_crackers3=lm(log(crackers3.Volume)~1,data=crackers_final)
+full_crackers3=lm(log(crackers3.Volume)~. -(crackers2.Volume+crackers4.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers3,data=crackers_final,direction="backward")
+step(null_crackers3,scope=list(lower=null_crackers3,upper=full_crackers3),direction="forward")
+step(null_crackers3,scope=list(upper=full_crackers3),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers3.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+#    crackers4.GRP + crackers4.price_euro
+
+crackers3_sl1 <- lm(log(crackers3.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+    crackers4.GRP + crackers4.price_euro, data=crackers_final)
+summary(crackers3_sl1)
+prediction3_sl1<-predict(crackers3_sl1, crackers_final)
+Insample_fit_sl1<- sqrt(sum((crackers_final$crackers3.Volume-exp(prediction3_sl1)*exp(var(crackers3_sl1$residuals)/2))^2))/105
+
+
+
+####################
+
+#Log-Log Model
+null_crackers3=lm(log(crackers3.Volume)~1,data=crackers_final)
+full_crackers3=lm(log(crackers3.Volume)~. -(crackers2.Volume+crackers4.Volume+crackers5.Volume+crackers2.price_euro+crackers3.price_euro+crackers4.price_euro+crackers5.price_euro)+(log(crackers2.price_euro)+log(crackers3.price_euro)+log(crackers4.price_euro)+log(crackers5.price_euro)),data=crackers_final)
+step(full_crackers3,data=crackers_final,direction="backward")
+step(null_crackers3,scope=list(lower=null_crackers3,upper=full_crackers3),direction="forward")
+step(null_crackers3,scope=list(upper=full_crackers3),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers3.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers3.Average_Number_SKUs + crackers3.GRP + crackers4.GRP + 
+#    log(crackers3.price_euro) + log(crackers4.price_euro)
+
+crackers3_ll1 <- lm(log(crackers3.Volume) ~ Week + crackers2.Average_Number_SKUs + 
+    crackers3.Average_Number_SKUs + crackers3.GRP + crackers4.GRP + 
+    log(crackers3.price_euro) + log(crackers4.price_euro), data=crackers_final)
+summary(crackers3_ll1)
+prediction3_ll1<-predict(crackers3_ll1)
+Insample_fit_ll1<- sqrt(sum((crackers_final$crackers3.Volume-exp(prediction3_ll1)*exp(var(crackers3_ll1$residuals)/2))^2))/105
+```
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+#Display all regression results
+
+stargazer(crackers3_lm1, crackers3_lm2,crackers3_sl1,crackers3_ll1, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 3) regression models")
+
+```
+
+
+```{r, echo=FALSE}
+#Illustrate in-sample performance: sqrt(SSE)/N
+Performance3 <-  data.frame(Linear_Model1=Insample_fit_lm1,Linear_Model2=Insample_fit_lm2,Semi_Log_Model1=Insample_fit_sl1,Log_Log_Model1=Insample_fit_ll1)
+kable(Performance2 ,caption = "In-Sample Performance (Cracker 3): sqrt(SSE)/N"  )
+
+
+#Final model:
+#crackers3.Volume ~ Week + crackers2.Average_Number_SKUs + 
+#    crackers3.Average_Number_SKUs + crackers3.price_euro + crackers3.GRP + 
+#    crackers4.GRP + crackers4.price_euro + crackers5.price_euro
+
+```
+
+###Crackers4
+```{r,echo=FALSE,message=FALSE,results='hide'}
+#Linear Model
+null_crackers4=lm(crackers4.Volume~1,data=crackers_final)
+full_crackers4=lm(crackers4.Volume~. -(crackers2.Volume+crackers3.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers4,data=crackers_final,direction="backward")
+step(null_crackers4,scope=list(lower=null_crackers4,upper=full_crackers4),direction="forward")
+step(null_crackers4,scope=list(upper=full_crackers4),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following linear model:
+#crackers4.Volume ~ crackers3.Average_Number_SKUs + 
+#    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+#    crackers4.GRP + crackers2.Average_Number_SKUs
+
+crackers4_lm1 <- lm(formula = crackers4.Volume ~ crackers3.Average_Number_SKUs + 
+    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+    crackers4.GRP + crackers2.Average_Number_SKUs, data = crackers_final)
+summary(crackers4_lm1)
+prediction4_lm1<-predict(crackers4_lm1, crackers_final)
+Insample_fit4_lm1<- sqrt(sum((crackers_final$crackers4.Volume-prediction4_lm1)^2))/105
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers2.Average_Number_SKUs)
+crackers4_lm2 <- lm(formula = crackers4.Volume ~ crackers3.Average_Number_SKUs + 
+    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+    crackers4.GRP, data = crackers_final)
+summary(crackers4_lm2)
+prediction4_lm2<-predict(crackers4_lm2, crackers_final)
+Insample_fit4_lm2<- sqrt(sum((crackers_final$crackers4.Volume-prediction4_lm2)^2))/105
+
+#######################
+
+
+#Semi-Log Model
+null_crackers4=lm(log(crackers4.Volume)~1,data=crackers_final)
+full_crackers4=lm(log(crackers4.Volume)~. -(crackers2.Volume+crackers3.Volume+crackers5.Volume),data=crackers_final)
+step(full_crackers4,data=crackers_final,direction="backward")
+step(null_crackers4,scope=list(lower=null_crackers4,upper=full_crackers4),direction="forward")
+step(null_crackers4,scope=list(upper=full_crackers4),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+#    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+#    crackers4.GRP + crackers2.Average_Number_SKUs, data = #crackers_final)
+
+crackers4_sl1 <- lm(formula = log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+    crackers4.GRP + crackers2.Average_Number_SKUs, data = crackers_final)
+summary(crackers4_sl1)
+prediction4_sl1<-predict(crackers4_sl1, crackers_final)
+Insample_fit4_sl1<- sqrt(sum((crackers_final$crackers4.Volume-exp(prediction4_sl1)*exp(var(crackers4_sl1$residuals)/2))^2))/105
+
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers2.Average_Number_SKUs)
+crackers4_sl2 <- lm(formula = log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+    crackers4.price_euro + crackers4.Average_Number_SKUs + Week + 
+    crackers4.GRP, data = crackers_final)
+summary(crackers4_sl2)
+prediction4_sl2<-predict(crackers4_sl2, crackers_final)
+
+Insample_fit4_sl2<- sqrt(sum((crackers_final$crackers4.Volume-exp(prediction4_sl2)*exp(var(crackers4_sl2$residuals)/2))^2))/105
+
+
+
+####################
+
+#Log-Log Model
+null_crackers4=lm(log(crackers4.Volume)~1,data=crackers_final)
+full_crackers4=lm(log(crackers4.Volume)~. -(crackers2.Volume+crackers3.Volume+crackers5.Volume)+(log(crackers2.price_euro)+log(crackers3.price_euro)+log(crackers4.price_euro)+log(crackers5.price_euro)),data=crackers_final)
+step(full_crackers4,data=crackers_final,direction="backward")
+step(null_crackers4,scope=list(lower=null_crackers4,upper=full_crackers4),direction="forward")
+step(null_crackers4,scope=list(upper=full_crackers4),data=crackers_final,direction="both")$call
+
+#forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following Log-Log model:
+#log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+#   log(crackers4.price_euro) + crackers4.Average_Number_SKUs + 
+#    Week + crackers4.GRP  + #crackers2.Average_Number_SKUs, 
+#    data = crackers_final)
+
+crackers4_ll1 <- lm(formula = log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+    log(crackers4.price_euro) + crackers4.Average_Number_SKUs + 
+    Week + crackers4.GRP  + crackers2.Average_Number_SKUs, 
+    data = crackers_final)
+summary(crackers4_ll1)
+prediction4_ll1<-predict(crackers4_ll1)
+Insample_fit4_ll1<- sqrt(sum((crackers_final$crackers4.Volume-exp(prediction4_ll1)*exp(var(crackers4_ll1$residuals)/2))^2))/105
+
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers4.price_euro,crackers2.Average_Number_SKUs,)
+crackers4_ll2 <- lm(formula = log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+    log(crackers4.price_euro) + crackers4.Average_Number_SKUs + 
+    Week + crackers4.GRP , 
+    data = crackers_final)
+summary(crackers4_ll2)
+prediction4_ll2<-predict(crackers4_ll2)
+Insample_fit4_ll2<- sqrt(sum((crackers_final$crackers4.Volume-exp(prediction4_ll2)*exp(var(crackers4_ll2$residuals)/2))^2))/105
+
+```
+
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+#Display all regression results
+
+stargazer(crackers4_lm1, crackers4_lm2,crackers4_sl1, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 4) regression models")
+
+stargazer(crackers4_sl2, crackers4_ll1,crackers4_ll2, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 4) regression models")
+```
+
+
+```{r, echo=FALSE}
+#Illustrate in-sample performance: sqrt(SSE)/N
+Performance4 <-  data.frame(Linear_Model1=Insample_fit4_lm1,Linear_Model2=Insample_fit4_lm2,Semi_Log_Model1=Insample_fit4_sl1,Semi_Log_Model2=Insample_fit4_sl2,Log_Log_Model1=Insample_fit4_ll1,Log_Log_Model2=Insample_fit4_ll2)
+kable(Performance4 ,caption = "In-Sample Performance (Cracker 4): sqrt(SSE)/N"  )
+
+
+#Final model:Log-Log
+
+#log(crackers4.Volume) ~ crackers3.Average_Number_SKUs + 
+#   log(crackers4.price_euro) + crackers4.Average_Number_SKUs + 
+#    Week + crackers4.GRP  + #crackers2.Average_Number_SKUs, 
+#    data = crackers_final)
+```
+
+
+
+
+###Crackers5
+```{r,echo=FALSE,message=FALSE,results='hide'}
+#Linear Model
+null_crackers5=lm(crackers5.Volume~1,data=crackers_final)
+full_crackers5=lm(crackers5.Volume~. -(crackers2.Volume+crackers3.Volume+crackers4.Volume),data=crackers_final)
+step(full_crackers5,data=crackers_final,direction="backward")
+step(null_crackers5,scope=list(lower=null_crackers5,upper=full_crackers5),direction="forward")
+step(null_crackers5,scope=list(upper=full_crackers5),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following linear model:
+# crackers5.Volume ~ Week + crackers4.Average_Number_SKUs + 
+#    crackers5.price_euro + crackers3.Average_Number_SKUs
+
+crackers5_lm1 <- lm(formula = crackers5.Volume ~ Week + crackers4.Average_Number_SKUs + 
+    crackers5.price_euro + crackers3.Average_Number_SKUs, data = crackers_final)
+summary(crackers5_lm1)
+prediction5_lm1<-predict(crackers5_lm1, crackers_final)
+Insample_fit5_lm1<- sqrt(sum((crackers_final$crackers5.Volume-prediction5_lm1)^2))/105
+
+#All the variable are siginificant
+
+#######################
+
+#Semi-Log Model
+null_crackers5=lm(log(crackers5.Volume)~1,data=crackers_final)
+full_crackers5=lm(log(crackers5.Volume)~. -(crackers2.Volume+crackers3.Volume+crackers4.Volume),data=crackers_final)
+step(full_crackers5,data=crackers_final,direction="backward")
+step(null_crackers5,scope=list(lower=null_crackers5,upper=full_crackers5),direction="forward")
+step(null_crackers5,scope=list(upper=full_crackers5),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following semi-Log model:
+#log(crackers5.Volume) ~ Week + crackers4.Average_Number_SKUs + 
+#    crackers5.price_euro + crackers2.Average_Number_SKUs + #crackers3.price_euro + 
+#    crackers4.GRP + crackers4.price_euro
+
+crackers5_sl1 <- lm(formula = log(crackers5.Volume) ~ Week + crackers4.Average_Number_SKUs + 
+    crackers5.price_euro + crackers2.Average_Number_SKUs + crackers3.price_euro + 
+    crackers4.GRP + crackers4.price_euro, data = crackers_final)
+summary(crackers5_sl1)
+prediction5_sl1<-predict(crackers5_sl1, crackers_final)
+Insample_fit5_sl1<- sqrt(sum((crackers_final$crackers5.Volume-exp(prediction5_sl1)*exp(var(crackers5_sl1$residuals)/2))^2))/105
+
+#To improve the previous model, we exclude the non statistically significant independent variables (crackers4.GRP,crackers4.price_euro)
+crackers5_sl2 <- lm(formula = log(crackers5.Volume) ~ Week + crackers4.Average_Number_SKUs + 
+    crackers5.price_euro + crackers2.Average_Number_SKUs + crackers3.price_euro, data = crackers_final)
+summary(crackers5_sl2)
+prediction5_sl2<-predict(crackers5_sl2, crackers_final)
+Insample_fit5_sl2<- sqrt(sum((crackers_final$crackers5.Volume-exp(prediction5_sl2)*exp(var(crackers5_sl2$residuals)/2))^2))/105
+
+
+####################
+
+#Log-Log Model
+null_crackers5=lm(log(crackers5.Volume)~1,data=crackers_final)
+full_crackers5=lm(log(crackers5.Volume)~. -(crackers2.Volume+crackers3.Volume+crackers4.Volume)+(log(crackers2.price_euro)+log(crackers3.price_euro)+log(crackers4.price_euro)+log(crackers5.price_euro)),data=crackers_final)
+step(full_crackers5,data=crackers_final,direction="backward")
+step(null_crackers5,scope=list(lower=null_crackers5,upper=full_crackers5),direction="forward")
+step(null_crackers5,scope=list(upper=full_crackers5),data=crackers_final,direction="both")$call
+
+#Backward, forward and backward/forward solutions give the same independent variables. Therefore we select only 
+#the following Log-Log model:
+#log(crackers5.Volume) ~ Week + crackers4.Average_Number_SKUs + 
+#    crackers5.price_euro + crackers2.Average_Number_SKUs + #log(crackers5.price_euro) + 
+#    crackers4.price_euro + log(crackers4.price_euro) + #crackers3.price_euro + 
+#    crackers4.GRP
+
+crackers5_ll1 <- lm(formula = log(crackers5.Volume) ~ Week + crackers4.Average_Number_SKUs + 
+    crackers5.price_euro + crackers2.Average_Number_SKUs + log(crackers5.price_euro) + 
+    crackers4.price_euro + log(crackers4.price_euro) + crackers3.price_euro + 
+    crackers4.GRP, data = crackers_final)
+summary(crackers5_ll1)
+prediction5_ll1<-predict(crackers5_ll1)
+Insample_fit5_ll1<- sqrt(sum((crackers_final$crackers5.Volume-exp(prediction5_ll1)*exp(var(crackers5_ll1$residuals)/2))^2))/105
+
+# All the variables are significant
+
+```
+
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+#Display all regression results
+
+stargazer(crackers5_lm1, crackers5_sl1,crackers5_sl2,crackers5_ll1, type = "latex", digits = 2, 
+          style = "qje", header = FALSE, 
+          font.size = "tiny", no.space = TRUE, title="Demand (Cracker 5) regression models")
+
+
+```
+
+
+
+```{r, echo=FALSE}
+#Illustrate in-sample performance: sqrt(SSE)/N
+Performance5 <-  data.frame(Linear_Model1=Insample_fit5_lm1,Semi_Log_Model1=Insample_fit5_sl1,Semi_Log_Model2=Insample_fit5_sl2,Log_Log_Model1=Insample_fit5_ll1)
+kable(Performance5 ,caption = "In-Sample Performance (Cracker 5): sqrt(SSE)/N"  )
+
+
+#Final model:Linear Model
+#crackers5.Volume ~ Week + crackers4.Average_Number_SKUs + 
+#    crackers5.price_euro + crackers3.Average_Number_SKUs
+
+
+```
+
+
+
+#Part 3 - Computing clout and vulnerability
+```{r,echo=FALSE}
+#Compute elasticity Matrix
+elast_matrix<-array(0, dim=c(4,4)) 
+elast_matrix[1,1] <-crackers2_lm1$coefficients[4]*mean(crackers_final$crackers2.price_euro)/ mean(crackers_final$crackers2.Volume)
+
+elast_matrix[1,2] <-crackers2_lm1$coefficients[6]*mean(crackers_final$crackers2.price_euro)/ mean(crackers_final$crackers2.Volume)
+
+elast_matrix[1,3] <-crackers2_lm1$coefficients[8]*mean(crackers_final$crackers2.price_euro)/ mean(crackers_final$crackers2.Volume)
+
+elast_matrix[1,4] <-crackers2_lm1$coefficients[9]*mean(crackers_final$crackers2.price_euro)/ mean(crackers_final$crackers2.Volume)
+
+
+elast_matrix[2,1] <-0
+
+elast_matrix[2,2] <-crackers3_lm1$coefficients[5]*mean(crackers_final$crackers3.price_euro)/ mean(crackers_final$crackers3.Volume)
+
+elast_matrix[2,3] <-crackers3_lm1$coefficients[8]*mean(crackers_final$crackers3.price_euro)/ mean(crackers_final$crackers3.Volume)
+
+elast_matrix[2,4] <-0
+
+
+elast_matrix[3,1] <-0
+
+elast_matrix[3,2] <-0
+
+elast_matrix[3,3] <-crackers4_ll1$coefficients[3]
+
+elast_matrix[3,4] <-0
+
+
+elast_matrix[4,1] <-0
+
+elast_matrix[4,2] <-0
+
+elast_matrix[4,3] <-0
+
+elast_matrix[4,4] <-crackers5_lm1$coefficients[4]*mean(crackers_final$crackers5.price_euro)/ mean(crackers_final$crackers5.Volume)
+
+elast_matrix <- as.data.frame(elast_matrix)
+rownames(elast_matrix) <- c("Cracker 2","Cracker 3","Cracker 4","Cracker 5")
+colnames(elast_matrix) <- c("Cracker 2","Cracker 3","Cracker 4","Cracker 5")
+kable(as.data.frame(elast_matrix),caption = "Elasticity Matrix")
+
+
+Clout_Vulnerability_matrix  <- data.frame(Clout=0,Vulnerability=0)
+Clout_Vulnerability_matrix[1,"Clout"] <- 0 
+Clout_Vulnerability_matrix[2,"Clout"] <- -0.4210203 
+Clout_Vulnerability_matrix[3,"Clout"] <- -0.4595808 
+Clout_Vulnerability_matrix[4,"Clout"] <- 0.5557349
+Clout_Vulnerability_matrix[1,"Vulnerability"] <- -0.1102209 
+Clout_Vulnerability_matrix[2,"Vulnerability"] <- -0.2146453 
+Clout_Vulnerability_matrix[3,"Vulnerability"] <- 0 
+Clout_Vulnerability_matrix[4,"Vulnerability"] <- 0
+rownames(Clout_Vulnerability_matrix) <- c("Cracker 2","Cracker 3","Cracker 4","Cracker 5")
+
+kable(Clout_Vulnerability_matrix,caption = "Clout and Vulnerability Matrix")
+
+```
+
+#Deep Promotions identifications 
+
+```{r,echo=FALSE}
+
+# Cracker 2
+ggplot(data=crackers2)+geom_line(aes(x=c(1:105),y=crackers2.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers2$crackers2.price_euro)-0.7*sd(crackers2$crackers2.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers2$crackers2.price_euro<=mean(crackers2$crackers2.price_euro)-0.7*sd(crackers2$crackers2.price_euro),crackers2$crackers2.price_euro,mean(crackers2$crackers2.price_euro)-0.7*sd(crackers2$crackers2.price_euro)), ymax=mean(crackers2$crackers2.price_euro)-0.7*sd(crackers2$crackers2.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Deep Promotions (Cracker 2)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers2$deep_promotions <- 1*(crackers2$crackers2.price_euro<=mean(crackers2$crackers2.price_euro)-0.7*sd(crackers2$crackers2.price_euro))
+
+
+#Cracker 3
+ggplot(data=crackers3)+geom_line(aes(x=c(1:105),y=crackers3.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers3$crackers3.price_euro)-0.7*sd(crackers3$crackers3.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers3$crackers3.price_euro<=mean(crackers3$crackers3.price_euro)-0.7*sd(crackers3$crackers3.price_euro),crackers3$crackers3.price_euro,mean(crackers3$crackers3.price_euro)-0.7*sd(crackers3$crackers3.price_euro)), ymax=mean(crackers3$crackers3.price_euro)-0.7*sd(crackers3$crackers3.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Deep Promotions (Cracker 3)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers3$deep_promotions <- 1*(crackers3$crackers3.price_euro<=mean(crackers3$crackers3.price_euro)-0.7*sd(crackers3$crackers3.price_euro))
+
+
+#Cracker 4
+ggplot(data=crackers4)+geom_line(aes(x=c(1:105),y=crackers4.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers4$crackers4.price_euro)-0.7*sd(crackers4$crackers4.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers4$crackers4.price_euro<=mean(crackers4$crackers4.price_euro)-0.7*sd(crackers4$crackers4.price_euro),crackers4$crackers4.price_euro,mean(crackers4$crackers4.price_euro)-0.7*sd(crackers4$crackers4.price_euro)), ymax=mean(crackers4$crackers4.price_euro)-0.7*sd(crackers4$crackers4.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Deep Promotions (Cracker 4)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers4$deep_promotions <- 1*(crackers4$crackers4.price_euro<=mean(crackers4$crackers4.price_euro)-0.7*sd(crackers4$crackers4.price_euro))
+
+
+#Cracker 5
+ggplot(data=crackers5)+geom_line(aes(x=c(1:105),y=crackers5.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers5$crackers5.price_euro)-0.7*sd(crackers5$crackers5.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers5$crackers5.price_euro<=mean(crackers5$crackers5.price_euro)-0.7*sd(crackers5$crackers5.price_euro),crackers5$crackers5.price_euro,mean(crackers5$crackers5.price_euro)-0.7*sd(crackers5$crackers5.price_euro)), ymax=mean(crackers5$crackers5.price_euro)-0.7*sd(crackers5$crackers5.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Deep Promotions (Cracker 5)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers5$deep_promotions <- 1*(crackers5$crackers5.price_euro<=mean(crackers5$crackers5.price_euro)-0.7*sd(crackers5$crackers5.price_euro))
+```
+
+
+
+#Promotions identifications 
+
+```{r,echo=FALSE}
+
+# Cracker 2
+ggplot(data=crackers2)+geom_line(aes(x=c(1:105),y=crackers2.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers2$crackers2.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers2$crackers2.price_euro<=mean(crackers2$crackers2.price_euro),crackers2$crackers2.price_euro,mean(crackers2$crackers2.price_euro)), ymax=mean(crackers2$crackers2.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Promotions (Cracker 2)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers2$promotions <- 1*(crackers2$crackers2.price_euro<=mean(crackers2$crackers2.price_euro))
+
+
+#Cracker 3
+ggplot(data=crackers3)+geom_line(aes(x=c(1:105),y=crackers3.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers3$crackers3.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers3$crackers3.price_euro<=mean(crackers3$crackers3.price_euro),crackers3$crackers3.price_euro,mean(crackers3$crackers3.price_euro)), ymax=mean(crackers3$crackers3.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Promotions (Cracker 3)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers3$promotions <- 1*(crackers3$crackers3.price_euro<=mean(crackers3$crackers3.price_euro))
+
+
+#Cracker 4
+ggplot(data=crackers4)+geom_line(aes(x=c(1:105),y=crackers4.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers4$crackers4.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers4$crackers4.price_euro<=mean(crackers4$crackers4.price_euro),crackers4$crackers4.price_euro,mean(crackers4$crackers4.price_euro)), ymax=mean(crackers4$crackers4.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Promotions (Cracker 4)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers4$promotions <- 1*(crackers4$crackers4.price_euro<=mean(crackers4$crackers4.price_euro))
+
+
+#Cracker 5
+ggplot(data=crackers5)+geom_line(aes(x=c(1:105),y=crackers5.price_euro,colour="red"))+geom_hline(aes(yintercept=mean(crackers5$crackers5.price_euro)))+geom_ribbon(aes(x=c(1:105), ymin=ifelse(crackers5$crackers5.price_euro<=mean(crackers5$crackers5.price_euro),crackers5$crackers5.price_euro,mean(crackers5$crackers5.price_euro)), ymax=mean(crackers5$crackers5.price_euro)), fill="grey", alpha=.4)+
+  labs(title="Promotions (Cracker 5)",y="Price (euros)",x="Week")+ theme(legend.position="none")
+
+crackers5$promotions <- 1*(crackers5$crackers5.price_euro<=mean(crackers5$crackers5.price_euro))
+```
+
+
+#Compute new Volume baseline
+```{r,echo=FALSE}
+
+
+movingAverage <- function(x, n=1, centered=FALSE) {
+    
+    if (centered) {
+        before <- floor  ((n-1)/2)
+        after  <- ceiling((n-1)/2)
+    } else {
+        before <- n-1
+        after  <- 0
+    }
+
+    # Track the sum and count of number of non-NA items
+    s     <- rep(0, length(x))
+    count <- rep(0, length(x))
+    
+    # Add the centered data 
+    new <- x
+    # Add to count list wherever there isn't a 
+    count <- count + !is.na(new)
+    # Now replace NA_s with 0_s and add to total
+    new[is.na(new)] <- 0
+    s <- s + new
+    
+    # Add the data from before
+    i <- 1
+    while (i <= before) {
+        # This is the vector with offset values to add
+        new   <- c(rep(NA, i), x[1:(length(x)-i)])
+
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+
+    # Add the data from after
+    i <- 1
+    while (i <= after) {
+        # This is the vector with offset values to add
+        new   <- c(x[(i+1):length(x)], rep(NA, i))
+       
+        count <- count + !is.na(new)
+        new[is.na(new)] <- 0
+        s <- s + new
+        
+        i <- i+1
+    }
+    
+    # return sum divided by count
+    s/count
+}
+
+# Cracker 2
+crackers2$own_Volume_Baseline<-crackers2$crackers2.Volume
+crackers2$own_Volume_Baseline[which(crackers2$promotions==1)]<-NA
+crackers2$own_Volume_Baseline[1]<-mean(crackers2$own_Volume_Baseline[2:13],na.rm=TRUE)
+crackers2$own_Volume_Baseline[which(crackers2$promotions==1)]<-movingAverage(crackers2$own_Volume_Baseline,12)[which(crackers2$promotions==1)]
+ggplot(data=crackers2)+geom_line(aes(x=c(1:105),y=crackers2.Volume,colour="Actual Sales"))+geom_line(aes(x=c(1:105),y=own_Volume_Baseline,colour="Baseline Sales"))+
+  labs(title="Sales Baseline (cracker 2)",x="Week",y="Sales")+ theme(legend.title = element_blank())
+
+#Cracker 3
+crackers3$own_Volume_Baseline<-crackers3$crackers3.Volume
+crackers3$own_Volume_Baseline[which(crackers3$promotions==1)]<-NA
+crackers3$own_Volume_Baseline[1]<-mean(crackers3$own_Volume_Baseline[2:18],na.rm=TRUE)
+crackers3$own_Volume_Baseline[2]<-mean(crackers3$own_Volume_Baseline[3:19],na.rm=TRUE)
+crackers3$own_Volume_Baseline[which(crackers3$promotions==1)]<-movingAverage(crackers3$own_Volume_Baseline,16)[which(crackers3$promotions==1)]
+ggplot(data=crackers3)+geom_line(aes(x=c(1:105),y=crackers3.Volume,colour="Actual Sales"))+geom_line(aes(x=c(1:105),y=own_Volume_Baseline,colour="Baseline Sales"))+
+  labs(title="Sales Baseline (cracker 3)",x="Week",y="Sales")+ theme(legend.title = element_blank())
+
+
+#Cracker 4
+crackers4$own_Volume_Baseline<-crackers4$crackers4.Volume
+crackers4$own_Volume_Baseline[which(crackers4$promotions==1)]<-NA
+crackers4$own_Volume_Baseline[which(crackers4$promotions==1)]<-movingAverage(crackers4$own_Volume_Baseline,15)[which(crackers4$promotions==1)]
+ggplot(data=crackers4)+geom_line(aes(x=c(1:105),y=crackers4.Volume,colour="Actual Sales"))+geom_line(aes(x=c(1:105),y=own_Volume_Baseline,colour="Baseline Sales"))+
+  labs(title="Sales Baseline (cracker 4)",x="Week",y="Sales")+ theme(legend.title = element_blank())
+
+
+#Cracker 5
+crackers5$own_Volume_Baseline<-crackers5$crackers5.Volume
+crackers5$own_Volume_Baseline[which(crackers5$promotions==1)]<-NA
+crackers5$own_Volume_Baseline[1]<-mean(crackers5$own_Volume_Baseline[2:14],na.rm=TRUE)
+crackers5$own_Volume_Baseline[which(crackers5$promotions==1)]<-movingAverage(crackers5$own_Volume_Baseline,12)[which(crackers5$promotions==1)]
+ggplot(data=crackers5)+geom_line(aes(x=c(1:105),y=crackers5.Volume,colour="Actual Sales"))+geom_line(aes(x=c(1:105),y=own_Volume_Baseline,colour="Baseline Sales"))+
+  labs(title="Sales Baseline (cracker 5)",x="Week",y="Sales")+ theme(legend.title = element_blank())
+
+```
